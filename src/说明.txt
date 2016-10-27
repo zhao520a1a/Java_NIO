@@ -1,0 +1,93 @@
+BIO:同步并阻塞，适用连接数目小且固定的架构，对服务器资源要求比较高；
+NIO（new I/O或not_blocking I/O）:同步非阻塞，适用来连接数目多且连接比较短（轻操作）的架构，例：聊天服务器；
+AIO(NIO.2):异步非阻塞，适用连接数目多且连接比较长（重操作）的架构,例：相册服务器
+
+NIO简介:在java.nio包中，对存储方法进行了改变， 用来读写文件是极好的，特别在非关系和大数据集领域；
+1.完全取代了java.io.File与文件系统的交互；
+2.提供了新的异步处理类，无需手动配置线程池和其他底层并发控制，便可在后台中执行文件和网络I/O操作；
+3.简化了Socket与通道的编码操作；
+
+常用类：
+Paths类：工具类，返回一个路径的辅助方法，比如：get()方法；
+Path类：能获取路径信息，访问该路径中的各元素，将路径转换为其他形式或提取部分路径；
+	例：normalize()：去掉路径中冗余信息;
+		roRealPath()：将一个文件的相对路径变为绝对路径, 融合了toAbsolutePath()和normalize()两个方法的功能；
+		resolve():将两个路径合并成一个新路径
+FileSystems类：工具类，提供各种方法，比如：getDefault()方法；
+FileSystem类:与文件系统交互的类
+
+
+处理目录和目录树：
+目录：带有特别属性的Path；
+①在目录中查找文件，用模式匹配过滤出指定目录中所有的mp4文件:
+	用到目录过滤流：
+	形如：DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "*.mp4")
+②遍历目录树，搜寻目录树中的文件，并对他们进行操作：
+	Files.walkFileTree是关键方法，它的参数分别表示是遍历的目录和遍历规则，其中遍历规则要继承SimpleFileVisitor类；
+	形如：Files.walkFileTree(startingDir, new SimpleFileVisitor<Path>())
+	注：“.”表当前目录，“..”表父目录；
+
+
+对文件的操作：使用java.nio.file.Files类，
+①创建和删除文件：Files.creatFile(), Files.delete();
+②复制和移动文件；Files.copy(source, target, options), Files.move(source, target, options);
+注：其中options常用的下面几种：
+	StandardCopyOption.REPLACE_EXISTING：若有相同文件存在可以替换
+	StandardCopyOption.COPY_ATTRIBUTES：复制文件属性
+	StandardCopyOption.ATOMIC_MOVE：表示是原子操作，确保边操作都成功，否则回滚；
+
+③对文件属性的操作：
+在DOS文件系统中：
+// 先得到文件的属性视图
+DosFileAttributeView view = Files.getFileAttributeView(target, DosFileAttributeView.class);
+获得文件所有属性信息：     DosFileAttributes attrs = view.readAttributes(); 
+设置文件属性：     view.setXXX(**); 例：view.setReadOnly(true);
+
+在Posix（可移植操作系统接口）文件系统中，例如：linux，unix系统；
+获得文件所有属性信息：      PosixFileAttributes attrs = Files.readAttributes(target, PosixFileAttributes.class);
+设置文件属性：    Set<PosixFilePermission> permissions = attrs.permissions();  //得到访问许可
+			   permissions.add(); //添加许可
+			   Files.setPosixFilePermissions(target, permissions); //设置文件的权限
+④读写文件操作：
+1.读写文件（会清空原有的数据）：Files.newWriter()/Files.Reader()
+写：BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8);
+读：BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8);
+若有读取文件的全部内容，Files提供了两个辅助方法：不用循环的方式读文件
+	List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);// 读取文件中的全部的行
+	byte[] bytes = Files.readAllBytes(path);// 读取文件中的全部字节；
+
+2.读写文件（保持原有的数据）：java.nio.channels.FileChannel类
+创建FileChannel：两种方法：
+	FileChannel fc = new RandomAccessFile(string,options).getChannel();
+    FileChannel fc = FileChannel.open(path,options);
+fc.read() / fc.write();
+
+⑤文件监听器：使用WatchService类
+该类使用用户线程监视目录下的变化（不包含子文件），并且在变化时返回一个事件；
+WatcherService watcher = FileSystems.getDefault().newWatchService();  // 创建一个文件监听器
+WathcKey key = path.register(watcher, event);	// 注册一个监视key；
+监听的事件有：
+StandardWatchEventKinds.ENTRY_MODIFY:修改                  StandardWatchEventKinds.ENTRY_CREATE:创建
+StandardWatchEventKinds.ENTRY_DELETE:删除                  StandardWatchEventKinds.OVERFLOW:覆盖
+
+
+NIO2异步读写操作：
+jdk7提供了三个新的异步通道： 
+ 	用于文件的IO：AsynchronousFileChannel类
+   	用于套接字IO(支持超时):AsynchronousSocketChannel类
+  	用于套接字IO(接受异步连接)：AsynchronousServerSocketChannel类 
+  	使用时，主要有两种形式：将来式和回调式 
+  将来式：要使用java.util.concurrent.Future接口 
+  适用场合:希望由主控线程发起IO操作，并轮询等到有结果； 
+   形如： 	AsynchronousFileChannel channel = AsynchronousFileChannel.open(path);
+		Future<Integer> result = channel.read(buffer, 0);
+  回调式：
+  主线程会派一个侦查员CompletionHandler要独立线程中执行IO操作，
+ 它将带着IO操作的结果返回到主线程中，而结果会触发它自己的completed或failed方法（需自己重写）；
+  适用场景：在异步事件刚一成功或失败需要马上采取行动时；   
+  形如：	AsynchronousFileChannel channel = AsynchronousFileChannel.open(path);	
+  		channel.read(buffer, 0, null, new CompletionHandler())
+  
+
+
+
